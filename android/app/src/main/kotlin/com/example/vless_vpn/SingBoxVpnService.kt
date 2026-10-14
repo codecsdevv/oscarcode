@@ -231,7 +231,6 @@ class SingBoxVpnService : VpnService(), PlatformInterface {
     override fun usePlatformAutoDetectInterfaceControl(): Boolean = true
     override fun autoDetectInterfaceControl(fd: Int) { protect(fd) }
 
-    override fun usePlatformDefaultInterfaceMonitor(): Boolean = true
 
     override fun startDefaultInterfaceMonitor(listener: InterfaceUpdateListener) {
         val cm = getSystemService(ConnectivityManager::class.java)
@@ -273,7 +272,6 @@ class SingBoxVpnService : VpnService(), PlatformInterface {
         netCallback = null
     }
 
-    override fun usePlatformInterfaceGetter(): Boolean = false
     override fun getInterfaces() = error("not used: usePlatformInterfaceGetter=false")
 
     // — определение приложения-владельца соединения (для правил по package_name) —
