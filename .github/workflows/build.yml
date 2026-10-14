@@ -45,6 +45,8 @@ jobs:
           cp libbox.aar app/android/app/libs/
           cp -r android/app/src app/android/app/
           cp android/app/proguard-rules.pro app/android/app/
+          cp lib/main.dart app/lib/main.dart
+          (cd app && flutter pub add shared_preferences)
           cd app/android/app
           if [ -f build.gradle.kts ]; then
             printf '\ndependencies {\n    implementation(files("libs/libbox.aar"))\n    implementation("androidx.core:core-ktx:1.13.1")\n}\n' >> build.gradle.kts
