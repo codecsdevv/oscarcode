@@ -14,17 +14,22 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.system.OsConstants
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import io.nekohasekai.libbox.BoxService
 import io.nekohasekai.libbox.InterfaceUpdateListener
 import io.nekohasekai.libbox.Libbox
+import io.nekohasekai.libbox.NetworkInterface as LibboxNetworkInterface
+import io.nekohasekai.libbox.NetworkInterfaceIterator
+import io.nekohasekai.libbox.StringIterator
 import io.nekohasekai.libbox.PlatformInterface
 import io.nekohasekai.libbox.SetupOptions
 import io.nekohasekai.libbox.TunOptions
 import io.nekohasekai.libbox.WIFIState
 import java.net.InetSocketAddress
+import java.net.InterfaceAddress
 import java.net.NetworkInterface
 import kotlin.concurrent.thread
 
@@ -272,7 +277,47 @@ class SingBoxVpnService : VpnService(), PlatformInterface {
         netCallback = null
     }
 
-    override fun getInterfaces() = error("not used: usePlatformInterfaceGetter=false")
+    /** Список сетевых интерфейсов для ядра (без него трафик не идёт). */
+    override fun getInterfaces(): NetworkInterfaceIterator {
+        val cm = getSystemService(ConnectivityManager::class.java)
+        val javaInterfaces = NetworkInterface.getNetworkInterfaces()?.toList() ?: emptyList()
+        val result = mutableListOf<LibboxNetworkInterface>()
+
+        for (network in cm.allNetworks) {
+            val lp = cm.getLinkProperties(network) ?: continue
+            val caps = cm.getNetworkCapabilities(network) ?: continue
+            val ifName = lp.interfaceName ?: continue
+            val ni = javaInterfaces.find { it.name == ifName } ?: continue
+
+            val box = LibboxNetworkInterface()
+            box.name = ifName
+            box.index = ni.index
+            box.mtu = try { ni.mtu } catch (_: Throwable) { 1500 }
+            box.dnsServer = StringArray(lp.dnsServers.mapNotNull { it.hostAddress }.iterator())
+            box.addresses = StringArray(ni.interfaceAddresses.map { it.toPrefix() }.iterator())
+            box.type = when {
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> Libbox.InterfaceTypeWIFI
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> Libbox.InterfaceTypeCellular
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> Libbox.InterfaceTypeEthernet
+                else -> Libbox.InterfaceTypeOther
+            }
+
+            var flags = 0
+            if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                flags = OsConstants.IFF_UP or OsConstants.IFF_RUNNING
+            }
+            if (ni.isLoopback) flags = flags or OsConstants.IFF_LOOPBACK
+            if (ni.isPointToPoint) flags = flags or OsConstants.IFF_POINTOPOINT
+            if (ni.supportsMulticast()) flags = flags or OsConstants.IFF_MULTICAST
+            box.flags = flags
+            box.metered = !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+            result.add(box)
+        }
+        return InterfaceArray(result.iterator())
+    }
+
+    private fun InterfaceAddress.toPrefix(): String =
+        "${address.hostAddress?.substringBefore('%')}/$networkPrefixLength"
 
     // — определение приложения-владельца соединения (для правил по package_name) —
     override fun useProcFS(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
@@ -306,4 +351,15 @@ class SingBoxVpnService : VpnService(), PlatformInterface {
     override fun readWIFIState(): WIFIState? = null
     override fun clearDNSCache() {}
     override fun sendNotification(notification: io.nekohasekai.libbox.Notification) {}
+}
+
+private class InterfaceArray(private val iterator: Iterator<LibboxNetworkInterface>) : NetworkInterfaceIterator {
+    override fun hasNext(): Boolean = iterator.hasNext()
+    override fun next(): LibboxNetworkInterface = iterator.next()
+}
+
+private class StringArray(private val iterator: Iterator<String>) : StringIterator {
+    override fun len(): Int = 0 // ядром не используется
+    override fun hasNext(): Boolean = iterator.hasNext()
+    override fun next(): String = iterator.next()
 }
