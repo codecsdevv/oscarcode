@@ -133,10 +133,10 @@ class VlessServer {
       'dns': {
         'servers': [
           {'tag': 'remote', 'address': 'https://1.1.1.1/dns-query', 'detour': 'proxy'},
-          {'tag': 'local', 'address': 'local'},
+          {'tag': 'bootstrap', 'address': 'https://1.1.1.1/dns-query'},
         ],
         'rules': [
-          {'domain': [host], 'server': 'local'},
+          {'domain': [host], 'server': 'bootstrap'},
         ],
         'final': 'remote',
         'strategy': 'ipv4_only',
